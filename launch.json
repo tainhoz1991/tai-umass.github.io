@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Launch D3 App",
+      "url": "http://127.0.0.1:5500/index_sonet4_5.html",
+      "webRoot": "${workspaceFolder}"
+    }
+  ]
+}

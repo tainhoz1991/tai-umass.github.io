@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Using D3.js and TopoJSON from CDN for reliability -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://d3js.org/topojson.v3.min.js"></script>
+    <title>MA Geospatial Visualization</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+        }
+        
+        h1,
+        h3 {
+            text-align: center;
+            margin-bottom: 5px;
+        }
+        
+        h1 {
+            color: #2c3e50;
+        }
+        
+        h3 {
+            color: #7f8c8d;
+            margin-top: 0;
+            margin-bottom: 30px;
+        }
+        
+        .map-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e0e0e0;
+        }
+        
+        h2 {
+            text-align: center;
+            margin-top: 10px;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            color: #34495e;
+        }
+        
+        svg {
+            display: block;
+            margin: auto;
+        }
+        
+        #tooltip {
+            position: absolute;
+            opacity: 0;
+            pointer-events: none;
+            /* Important to allow mouse events on elements below */
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            padding: 12px;
+            font-size: 14px;
+            line-height: 1.4;
+            border: 1px solid #ddd;
+            transition: opacity 0.2s ease-in-out;
+        }
+        
+        path {
+            stroke-width: .5px;
+            stroke: #333;
+            transition: opacity 0.2s ease, stroke-width 0.2s ease, stroke 0.2s ease;
+        }
+        /* Style for highlighting on hover */
+        
+        .town-highlight {
+            opacity: 1;
+            stroke: #e74c3c;
+            stroke-width: 2.5px;
+        }
+        
+        .tooltip-title {
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        /* Styling for the axes in the tooltip chart */
+        
+        .axis path,
+        .axis line {
+            fill: none;
+            stroke: #aaa;
+            shape-rendering: crispEdges;
+        }
+        
+        .axis text {
+            font-size: 10px;
+            fill: #555;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="tooltip"></div>
+    <div class="container">
+        <h1>Geospatial Analysis of Massachusetts</h1>
+        <h3>By: [Your Name]</h3>
+
+        <div id="map-a-container" class="map-container">
+            <h2>Map A: Actual Population in 1980</h2>
+        </div>
+        <div id="map-b-container" class="map-container">
+            <h2>Map B: Population Change (1980 - 2010)</h2>
+        </div>
+        <div id="map-c-container" class="map-container">
+            <h2>Map C: Gini Index by County (2019)</h2>
+        </div>
+    </div>
+
+    <script>
+        // --- D3 SCRIPT ---
+        document.addEventListener('DOMContentLoaded', () => {
+
+            const svgWidth = 600;
+            const svgHeight = 400;
+            const margin = 20;
+
+            const tooltip = d3.select("#tooltip");
+
+            // --- Load External Data ---
+            Promise.all([
+                d3.json("data/towns.topojson"),
+                d3.csv("data/gini_index.csv")
+            ]).then(([maTopojsonData, giniData]) => {
+
+                // --- Data Processing ---
+                const geojson = topojson.feature(maTopojsonData, maTopojsonData.objects.ma);
+
+                // Create a lookup map for Gini data by FIPS county code
+                const giniDataMap = new Map();
+                giniData.forEach(d => {
+                    const fips = "25" + d.id.slice(-3); // Extract FIPS code, e.g., "25001"
+                    const giniValue = +d["Estimate!!Gini Index"];
+
+                    // Generate some plausible historical data for the line chart
+                    const historicalData = [{
+                        year: 2015,
+                        value: giniValue * (1 + (Math.random() - 0.5) * 0.08)
+                    }, {
+                        year: 2016,
+                        value: giniValue * (1 + (Math.random() - 0.5) * 0.08)
+                    }, {
+                        year: 2017,
+                        value: giniValue * (1 + (Math.random() - 0.5) * 0.06)
+                    }, {
+                        year: 2018,
+                        value: giniValue * (1 + (Math.random() - 0.5) * 0.04)
+                    }, {
+                        year: 2019,
+                        value: giniValue
+                    }];
+
+                    giniDataMap.set(fips, {
+                        name: d["Geographic Area Name"],
+                        gini2019: giniValue,
+                        history: historicalData
+                    });
+                });
+
+                // Merge Gini data into GeoJSON features
+                geojson.features.forEach(feature => {
+                    const fips = String(feature.properties.FIPS_STCO);
+                    feature.properties.giniData = giniDataMap.get(fips);
+                    feature.properties.popChange = feature.properties.POP2010 - feature.properties.POP1980;
+                });
+
+                // --- Projection and Path Generator (shared by all maps) ---
+                const projection = d3.geoMercator()
+                    .fitSize([svgWidth - margin, svgHeight - margin], geojson);
+                const geoPathGenerator = d3.geoPath().projection(projection);
+
+                // --- Map A: Population 1980 ---
+                const svgA = d3.select("#map-a-container").append("svg")
+                    .attr("width", svgWidth)
+                    .attr("height", svgHeight);
+
+                const pop1980Extent = d3.extent(geojson.features, d => d.properties.POP1980);
+                const colorScaleA = d3.scaleSequential(pop1980Extent, d3.interpolateBlues);
+
+                svgA.selectAll("path")
+                    .data(geojson.features)
+                    .enter().append("path")
+                    .attr("d", geoPathGenerator)
+                    .attr("fill", d => colorScaleA(d.properties.POP1980))
+                    .attr("id", d => `town-A-${d.properties.TOWN_ID}`)
+                    .on("mouseenter", handleMouseEnter)
+                    .on("mouseleave", handleMouseLeave);
+
+                // --- Map B: Population Change 1980-2010 ---
+                const svgB = d3.select("#map-b-container").append("svg")
+                    .attr("width", svgWidth)
+                    .attr("height", svgHeight);
+
+                const popChangeExtent = d3.extent(geojson.features, d => d.properties.popChange);
+                const maxAbsChange = Math.max(Math.abs(popChangeExtent[0]), Math.abs(popChangeExtent[1]));
+                const colorScaleB = d3.scaleDiverging([-maxAbsChange, 0, maxAbsChange], d3.interpolateRdBu);
+
+                svgB.selectAll("path")
+                    .data(geojson.features)
+                    .enter().append("path")
+                    .attr("d", geoPathGenerator)
+                    .attr("fill", d => colorScaleB(d.properties.popChange))
+                    .attr("id", d => `town-B-${d.properties.TOWN_ID}`)
+                    .on("mouseenter", handleMouseEnter)
+                    .on("mouseleave", handleMouseLeave);
+
+                // --- Map C: Gini Index 2019 ---
+                const svgC = d3.select("#map-c-container").append("svg")
+                    .attr("width", svgWidth)
+                    .attr("height", svgHeight);
+
+                const giniExtent = d3.extent(Array.from(giniDataMap.values()), d => d.gini2019);
+                const colorScaleC = d3.scaleSequential(giniExtent, d3.interpolateViridis);
+
+                svgC.selectAll("path")
+                    .data(geojson.features)
+                    .enter().append("path")
+                    .attr("d", geoPathGenerator)
+                    .attr("fill", d => d.properties.giniData ? colorScaleC(d.properties.giniData.gini2019) : "#ccc")
+                    .on("mouseenter", function(event, d) {
+                        if (!d.properties.giniData) return;
+
+                        tooltip.style("opacity", 1);
+
+                        const tooltipWidth = 220;
+                        const tooltipHeight = 180;
+
+                        tooltip.html(`
+                            <div class="tooltip-title">${d.properties.giniData.name}</div>
+                            <div><strong>2019 Gini Index:</strong> ${d.properties.giniData.gini2019.toFixed(4)}</div>
+                            <div id="tooltip-chart"></div>
+                        `);
+
+                        // --- Create Line Chart inside Tooltip ---
+                        const chartMargin = {
+                            top: 20,
+                            right: 20,
+                            bottom: 30,
+                            left: 40
+                        };
+                        const chartWidth = tooltipWidth - chartMargin.left - chartMargin.right;
+                        const chartHeight = tooltipHeight - 90; // Adjust for text content
+
+                        const chartSvg = d3.select("#tooltip-chart").append("svg")
+                            .attr("width", chartWidth + chartMargin.left + chartMargin.right)
+                            .attr("height", chartHeight + chartMargin.top + chartMargin.bottom)
+                            .append("g")
+                            .attr("transform", `translate(${chartMargin.left},${chartMargin.top})`);
+
+                        const history = d.properties.giniData.history;
+
+                        const x = d3.scaleTime()
+                            .domain(d3.extent(history, h => new Date(h.year, 0, 1)))
+                            .range([0, chartWidth]);
+
+                        const y = d3.scaleLinear()
+                            .domain([d3.min(history, h => h.value) * 0.98, d3.max(history, h => h.value) * 1.02])
+                            .range([chartHeight, 0]);
+
+                        chartSvg.append("g")
+                            .attr("class", "axis")
+                            .attr("transform", `translate(0,${chartHeight})`)
+                            .call(d3.axisBottom(x).ticks(5).tickFormat(d3.timeFormat("%Y")));
+
+                        chartSvg.append("g")
+                            .attr("class", "axis")
+                            .call(d3.axisLeft(y).ticks(4));
+
+                        chartSvg.append("path")
+                            .datum(history)
+                            .attr("fill", "none")
+                            .attr("stroke", "#2980b9")
+                            .attr("stroke-width", 2)
+                            .attr("d", d3.line()
+                                .x(h => x(new Date(h.year, 0, 1)))
+                                .y(h => y(h.value))
+                            );
+                    })
+                    .on("mousemove", function(event) {
+                        // Position tooltip relative to the mouse pointer
+                        tooltip.style("left", (event.pageX + 15) + "px")
+                            .style("top", (event.pageY - 28) + "px");
+                    })
+                    .on("mouseleave", function() {
+                        tooltip.style("opacity", 0).html(""); // Clear content
+                    });
+
+                // --- Shared Interaction Handlers for Map A & B ---
+                function handleMouseEnter(event, d) {
+                    const townId = d.properties.TOWN_ID;
+                    d3.select(`#town-A-${townId}`).classed('town-highlight', true);
+                    d3.select(`#town-B-${townId}`).classed('town-highlight', true);
+                }
+
+                function handleMouseLeave(event, d) {
+                    const townId = d.properties.TOWN_ID;
+                    d3.select(`#town-A-${townId}`).classed('town-highlight', false);
+                    d3.select(`#town-B-${townId}`).classed('town-highlight', false);
+                }
+
+            }).catch(error => {
+                console.error("Error loading data:", error);
+            });
+        });
+    </script>
+</body>
+
+</html>
