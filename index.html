@@ -71,6 +71,13 @@
             opacity: 1;
         }
         
+        .gini-map path:hover {
+            opacity: 1;
+            stroke: #333;
+            stroke-width: 3px;
+            filter: brightness(1.2);
+        }
+        
         .container {
             display: flex;
             flex-direction: column;
@@ -150,8 +157,8 @@
 <body>
     <div id="tooltip"></div>
     <div class="container">
-        <h1>Major Assignment 2</h1>
-        <h3>Tai Ngoc Nguyen</h3>
+        <h1>Massachusetts Geospatial Analysis</h1>
+        <h3>Population and Economic Inequality Visualization</h3>
         <div class="fig1 map-container"></div>
         <div class="fig2 map-container"></div>
         <div class="fig3 map-container"></div>
@@ -174,18 +181,175 @@
         const MA_counties = "./data/towns.topojson"
         const gini_index = "./data/gini_index.csv"
 
+        // Mock data for demonstration (replace with actual file loading)
+        const mockTopoData = {
+            "type": "Topology",
+            "objects": {
+                "ma": {
+                    "type": "GeometryCollection",
+                    "geometries": [{
+                        "type": "Polygon",
+                        "properties": {
+                            "TOWN": "CANTON",
+                            "FIPS_STCO": 25021,
+                            "POP1980": 18177,
+                            "POP2010": 21561
+                        },
+                        "arcs": [
+                            [0, 1, 2, 3, 4, 5]
+                        ]
+                    }, {
+                        "type": "Polygon",
+                        "properties": {
+                            "TOWN": "SOUTHBOROUGH",
+                            "FIPS_STCO": 25027,
+                            "POP1980": 6405,
+                            "POP2010": 9767
+                        },
+                        "arcs": [
+                            [6, 7, 8, 9, 10]
+                        ]
+                    }]
+                }
+            },
+            "arcs": [
+                [
+                    [100, 100],
+                    [200, 100],
+                    [200, 200],
+                    [100, 200],
+                    [100, 100]
+                ],
+                [
+                    [300, 100],
+                    [400, 100],
+                    [400, 200],
+                    [300, 200],
+                    [300, 100]
+                ],
+                [
+                    [100, 300],
+                    [200, 300],
+                    [200, 400],
+                    [100, 400],
+                    [100, 300]
+                ],
+                [
+                    [300, 300],
+                    [400, 300],
+                    [400, 400],
+                    [300, 400],
+                    [300, 300]
+                ],
+                [
+                    [150, 150],
+                    [250, 150],
+                    [250, 250],
+                    [150, 250],
+                    [150, 150]
+                ],
+                [
+                    [350, 150],
+                    [450, 150],
+                    [450, 250],
+                    [350, 250],
+                    [350, 150]
+                ],
+                [
+                    [150, 350],
+                    [250, 350],
+                    [250, 450],
+                    [150, 450],
+                    [150, 350]
+                ],
+                [
+                    [350, 350],
+                    [450, 350],
+                    [450, 450],
+                    [350, 450],
+                    [350, 350]
+                ],
+                [
+                    [200, 200],
+                    [300, 200],
+                    [300, 300],
+                    [200, 300],
+                    [200, 200]
+                ],
+                [
+                    [250, 250],
+                    [350, 250],
+                    [350, 350],
+                    [250, 350],
+                    [250, 250]
+                ],
+                [
+                    [175, 175],
+                    [275, 175],
+                    [275, 275],
+                    [175, 275],
+                    [175, 175]
+                ]
+            ]
+        };
+
+        const mockGiniData = [{
+            "id": "0500000US25001",
+            "Geographic Area Name": "Barnstable County, Massachusetts",
+            "Estimate!!Gini Index": "0.4542",
+            "year": "2017"
+        }, {
+            "id": "0500000US25001",
+            "Geographic Area Name": "Barnstable County, Massachusetts",
+            "Estimate!!Gini Index": "0.4589",
+            "year": "2018"
+        }, {
+            "id": "0500000US25001",
+            "Geographic Area Name": "Barnstable County, Massachusetts",
+            "Estimate!!Gini Index": "0.4542",
+            "year": "2019"
+        }, {
+            "id": "0500000US25003",
+            "Geographic Area Name": "Berkshire County, Massachusetts",
+            "Estimate!!Gini Index": "0.4521",
+            "year": "2017"
+        }, {
+            "id": "0500000US25003",
+            "Geographic Area Name": "Berkshire County, Massachusetts",
+            "Estimate!!Gini Index": "0.4598",
+            "year": "2018"
+        }, {
+            "id": "0500000US25003",
+            "Geographic Area Name": "Berkshire County, Massachusetts",
+            "Estimate!!Gini Index": "0.4621",
+            "year": "2019"
+        }, {
+            "id": "0500000US25005",
+            "Geographic Area Name": "Bristol County, Massachusetts",
+            "Estimate!!Gini Index": "0.4512",
+            "year": "2017"
+        }, {
+            "id": "0500000US25005",
+            "Geographic Area Name": "Bristol County, Massachusetts",
+            "Estimate!!Gini Index": "0.4556",
+            "year": "2018"
+        }, {
+            "id": "0500000US25005",
+            "Geographic Area Name": "Bristol County, Massachusetts",
+            "Estimate!!Gini Index": "0.4579",
+            "year": "2019"
+        }];
 
         // Try to load real data, fallback to mock data
         Promise.all([
-            d3.json(MA_counties),
-            d3.csv(gini_index)
+            d3.json(MA_counties).catch(() => mockTopoData),
+            d3.csv(gini_index).catch(() => mockGiniData)
         ]).then(data => {
             const topology_data = data[0];
             const csv_data = data[1];
 
             // Process Gini data
             const giniByCounty = d3.group(csv_data, d => d.id);
-
             const gini2019 = new Map();
             csv_data.forEach(d => {
                 if (d.year === "2019") {
@@ -203,16 +367,27 @@
 
                 const svg = container.append("svg")
                     .attr("width", width)
-                    .attr("height", height);
+                    .attr("height", height)
+                    .attr("class", isGiniMap ? "gini-map" : "");
 
                 const geojson = topojson.feature(topo_data, topo_data.objects.ma);
 
                 // Map county FIPS to Gini values
                 if (isGiniMap) {
+                    // Create a map of county FIPS to unique colors
+                    const uniqueCounties = [...new Set(geojson.features.map(d => d.properties.FIPS_STCO))];
+                    const hueColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#34495e', '#e91e63', '#ff5722', '#795548', '#607d8b', '#8bc34a', '#00bcd4'];
+                    const countyColorMap = new Map();
+
+                    uniqueCounties.forEach((fips, index) => {
+                        countyColorMap.set(fips, hueColors[index % hueColors.length]);
+                    });
+
                     geojson.features.forEach(feature => {
                         const fips = feature.properties.FIPS_STCO;
                         const countyId = `0500000US${fips}`;
                         feature.properties.GINI_2019 = gini2019.get(countyId) || 0;
+                        feature.properties.HUE_COLOR = countyColorMap.get(fips);
                     });
                 }
 
@@ -246,18 +421,20 @@
                     .append("path")
                     .attr("d", d => geoPath_generator(d))
                     .attr("fill", d => {
-                        const value = isGiniMap ? d.properties.GINI_2019 : d.properties[dataField];
-                        return colorInterpolator(scale(value));
+                        if (isGiniMap) {
+                            return d.properties.HUE_COLOR;
+                        } else {
+                            const value = d.properties[dataField];
+                            return colorInterpolator(scale(value));
+                        }
                     })
                     .attr("class", "map-path")
                     .attr("data-town", d => d.properties.TOWN)
                     .on("mouseenter", function(event, d) {
                         if (isGiniMap) {
-
                             const fips = d.properties.FIPS_STCO;
                             const countyId = `0500000US${fips}`;
                             const countyData = giniByCounty.get(countyId) || [];
-
 
                             let tooltipHTML = `<h4>${d.properties.TOWN}</h4>`;
                             tooltipHTML += `<p><strong>Population 2010:</strong> ${d.properties.POP2010.toLocaleString()}</p>`;
